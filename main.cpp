@@ -17,7 +17,7 @@
 // 7x7 @9: 56.13 -> 7 -> 3.4 -> 0.159
 // 8x8 @9: ??? -> 86 -> 41 -> 1.42
 // 9x9 @9: ??? -> 1102 -> ??? -> 20.628
-constexpr uint8_t BOARD_SIZE{4};
+constexpr uint8_t BOARD_SIZE{9};
 constexpr uint8_t NUM_STATES{9};
 
 struct Vec2 {
@@ -41,9 +41,9 @@ const Rule rules[] = {
 	// Column
 	{
 		[](const Vec2& pos) -> std::vector<Vec2> {
-			std::vector<Vec2> cells{BOARD_SIZE};
+			std::vector<Vec2> cells{};
 			for (int i{0}; i < BOARD_SIZE; i++) {
-				cells[i] = Vec2{pos.x, i};
+				if(i != pos.y) cells.push_back(Vec2{pos.x, i});
 			}
 
 			return cells;
@@ -63,7 +63,7 @@ const Rule rules[] = {
 		[](const Vec2& pos) -> std::vector<Vec2> {
 			std::vector<Vec2> cells{BOARD_SIZE};
 			for (int i{0}; i < BOARD_SIZE; i++) {
-				cells[i] = Vec2{i, pos.y};
+				if(i != pos.x) cells.push_back(Vec2{i, pos.y});
 			}
 
 			return cells;
@@ -86,7 +86,7 @@ const Rule rules[] = {
 			std::vector<Vec2> cells{};
 			for (int i{0}; i < square_size; i++) {
 				for (int j{0}; j < square_size; j++) {
-					cells.push_back(Vec2{square_pos.x * square_size + i, square_pos.y * square_size + j});
+					if (i != pos.x || j != pos.y) cells.push_back(Vec2{square_pos.x * square_size + i, square_pos.y * square_size + j});
 				}
 			}
 
@@ -282,7 +282,6 @@ std::ostream& operator<<(std::ostream& out, const Board& board) {
 	return out;
 }
 
-// O(n) runtime and memory unfortunately
 std::vector<uint8_t> iter_set(const std::vector<Cell>& cell_states, int n) {
 	std::vector<uint8_t> state{};
 
@@ -304,8 +303,8 @@ std::vector<uint8_t> iter_set(const std::vector<Cell>& cell_states, int n) {
 }
 
 void update_board(Board& board) {
-	// const int max_threads{(int)std::thread::hardware_concurrency() / 2};
-	const int max_threads{1};
+	const int max_threads{(int)std::thread::hardware_concurrency() / 2};
+	// const int max_threads{1};
 
 	// Reset the board (basically)
 	for (auto& row : board) {
@@ -321,75 +320,43 @@ void update_board(Board& board) {
 				for (int r{0}; r < NUM_RULES; r++) {
 					auto& rule{rules[r]};
 
-					if (board[pos].rules_checked[r]) continue;
-
-					// Where the cell group cells are
-					std::vector<Vec2> cell_group_locs{rule.get_cells(pos)};
-
 					// Copy of the original states
 					std::vector<Cell> cell_group_states{};
 
-					// The new possible states under this rule
-					std::vector<state_set> cell_group_new_states{};
-
-					for (auto& cell_pos : cell_group_locs) {
+					for (auto& cell_pos : rule.get_cells(pos)) {
 						board[cell_pos].rules_checked.set(r);
 						cell_group_states.push_back(board[cell_pos]);
-						cell_group_new_states.push_back(state_set{});
 					}
-
-					std::cout << cell_group_states << "\n";
 
 					int num_possibilities{1};
 					for (Cell& state : cell_group_states) {
 						num_possibilities *= state.num_states();
 					}
 
-					int given_each{(int)ceil(num_possibilities / max_threads)};
+					int given_each{(int)ceil(num_possibilities / NUM_STATES)};
 
-					auto check_possibility = [&cell_group_new_states, &cell_group_states, &rule, &r](int n) -> bool {
-						auto collapse_vals = iter_set(cell_group_states, n);
-						if (rule.is_valid(collapse_vals)) {
-							std::cout << collapse_vals << " is valid\n";
-
-							bool all_full{false};
-
-							for (int i{0}; i < cell_group_new_states.size(); i++) {
-								cell_group_new_states[i][collapse_vals[i]] = 1;
-								// if (!cell_group_states[i].is_collapsed) {
-								// 	if (cell_group_new_states[i].count() != NUM_STATES) {
-								// 		all_full = false;
-								// 	}
-								// }
+					auto thread_func = [&num_possibilities, &rule, &cell_group_states](uint8_t val) -> bool {
+						for (int i{0}; i < num_possibilities; i++) {
+							auto collapse_vals = iter_set(cell_group_states, i);
+							collapse_vals.push_back(val);
+							if(rule.is_valid(collapse_vals)) {
+								return true;
 							}
-
-							return all_full;
 						}
-
 						return false;
 					};
 
-					auto thread_func = [&check_possibility](int n_min, int delta) {
-						for (int i{n_min}; i < delta + n_min; i++) {
-							if(check_possibility(i)) {
-								return;
-							}
-						}
-					};
-
-					std::vector<std::future<void>> futures{(size_t)max_threads};
-					for (int k{0}; k < max_threads; k++) {
-						futures[k] = std::async(thread_func, k * given_each, given_each);
+					std::vector<std::future<bool>> futures{(size_t)NUM_STATES};
+					for (int k{0}; k < futures.size(); k++) {
+						futures[k] = std::async(thread_func, k);
 					}
 
-					for (auto& f : futures) f.get();
-
-					for (int k{0}; k < cell_group_locs.size(); k++) {
-						Cell& cell = board[cell_group_locs[k]];
-						if (!cell.is_collapsed) {
-							cell.states &= cell_group_new_states[k];
-						}
+					state_set new_states{};
+					for (int k{0}; k < futures.size(); k++) {
+						new_states[k] = futures[k].get();
 					}
+
+					board[pos].states &= new_states;
 				}
 
 				std::cout << "Cell at: " << pos << " has new states: " << board[pos] << "\n";
@@ -424,47 +391,47 @@ int main() {
 	int y_pos{};
 	uint8_t value{};
 
-	// collapse_cell(Vec2{0, 0}, 4);
-	// collapse_cell(Vec2{0, 3}, 9);
-	// collapse_cell(Vec2{0, 7}, 5);
-	// collapse_cell(Vec2{1, 2}, 5);
-	// collapse_cell(Vec2{1, 3}, 6);
-	// collapse_cell(Vec2{1, 5}, 7);
-	// collapse_cell(Vec2{1, 6}, 2);
-	// collapse_cell(Vec2{1, 8}, 4);
-	// collapse_cell(Vec2{2, 5}, 4);
-	// collapse_cell(Vec2{2, 6}, 7);
-	// collapse_cell(Vec2{3, 0}, 8);
+	collapse_cell(Vec2{0, 0}, 4);
+	collapse_cell(Vec2{0, 3}, 9);
+	collapse_cell(Vec2{0, 7}, 5);
+	collapse_cell(Vec2{1, 2}, 5);
+	collapse_cell(Vec2{1, 3}, 6);
+	collapse_cell(Vec2{1, 5}, 7);
+	collapse_cell(Vec2{1, 6}, 2);
+	collapse_cell(Vec2{1, 8}, 4);
+	collapse_cell(Vec2{2, 5}, 4);
+	collapse_cell(Vec2{2, 6}, 7);
+	collapse_cell(Vec2{3, 0}, 8);
 	// collapse_cell(Vec2{3, 1}, 7);
 	// collapse_cell(Vec2{3, 3}, 3);
 	// collapse_cell(Vec2{3, 6}, 6);
-	// collapse_cell(Vec2{4, 2}, 9);
+	collapse_cell(Vec2{4, 2}, 9);
 	// collapse_cell(Vec2{4, 3}, 7);
 	// collapse_cell(Vec2{4, 4}, 2);
 	// collapse_cell(Vec2{4, 6}, 1);
 	// collapse_cell(Vec2{4, 7}, 8);
-	// collapse_cell(Vec2{5, 2}, 6);
+	collapse_cell(Vec2{5, 2}, 6);
 	// collapse_cell(Vec2{5, 3}, 8);
 	// collapse_cell(Vec2{5, 4}, 9);
 	// collapse_cell(Vec2{5, 5}, 1);
-	// collapse_cell(Vec2{6, 0}, 1);
+	collapse_cell(Vec2{6, 0}, 1);
 	// collapse_cell(Vec2{6, 2}, 2);
 	// collapse_cell(Vec2{6, 3}, 4);
 	// collapse_cell(Vec2{6, 6}, 5);
 	// collapse_cell(Vec2{6, 7}, 6);
 	// collapse_cell(Vec2{6, 8}, 8);
-	// collapse_cell(Vec2{7, 0}, 7);
+	collapse_cell(Vec2{7, 0}, 7);
 	// collapse_cell(Vec2{7, 1}, 6);
 	// collapse_cell(Vec2{7, 3}, 5);
 	// collapse_cell(Vec2{7, 4}, 3);
 	// collapse_cell(Vec2{7, 5}, 8);
 	// collapse_cell(Vec2{7, 8}, 1);
-	// collapse_cell(Vec2{8, 2}, 8);
+	collapse_cell(Vec2{8, 2}, 8);
 	// collapse_cell(Vec2{8, 5}, 2);
 	// collapse_cell(Vec2{8, 7}, 7);
 
-	collapse_cell(Vec2{0, 0}, 1);
-	collapse_cell(Vec2{0, 1}, 2);
+	// collapse_cell(Vec2{0, 0}, 1);
+	// collapse_cell(Vec2{0, 1}, 2);
 
 	std::cout << board << "\n";
 
