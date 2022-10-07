@@ -180,6 +180,11 @@ struct Cell {
 	}
 };
 
+std::ostream& operator<<(std::ostream& out, const uint8_t num) {
+	out << static_cast<unsigned int>(num);
+	return out;
+}
+
 std::ostream& operator<<(std::ostream& out, const Cell& cell) {
 	out << "{ ";
 	if (cell.is_collapsed) {
@@ -235,11 +240,6 @@ public:
 		return cells.end();
 	}
 };
-
-std::ostream& operator<<(std::ostream& out, const uint8_t num) {
-	out << static_cast<unsigned int>(num);
-	return out;
-}
 
 template <typename T>
 std::ostream& operator<<(std::ostream& out, const std::vector<T>& vec) {
