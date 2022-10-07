@@ -18,7 +18,7 @@
 // 8x8 @9: ??? -> 86 -> 41 -> 1.42
 // 9x9 @9: ??? -> 1102 -> ??? -> 20.628
 constexpr uint8_t BOARD_SIZE{4};
-constexpr uint8_t NUM_STATES{4};
+constexpr uint8_t NUM_STATES{9};
 
 struct Vec2 {
 	int x;
@@ -36,7 +36,7 @@ struct Rule {
 
 using state_set = std::bitset<NUM_STATES>;
 
-constexpr size_t NUM_RULES{2};
+constexpr size_t NUM_RULES{3};
 const Rule rules[] = {
 	// Column
 	{
@@ -55,7 +55,7 @@ const Rule rules[] = {
 				states.set(val);
 			}
 
-			return states.count() == NUM_STATES;
+			return states.count() == BOARD_SIZE;
 		}
 	},
 	// Row
@@ -75,33 +75,33 @@ const Rule rules[] = {
 				states.set(val);
 			}
 
-			return states.count() == NUM_STATES;
+			return states.count() == BOARD_SIZE;
+		}
+	},
+	//Squares
+	{
+		[](const Vec2& pos) -> std::vector<Vec2> {
+			int square_size{(int)ceil(sqrt(BOARD_SIZE))};
+			Vec2 square_pos = pos / square_size;
+			std::vector<Vec2> cells{};
+			for (int i{0}; i < square_size; i++) {
+				for (int j{0}; j < square_size; j++) {
+					cells.push_back(Vec2{square_pos.x * square_size + i, square_pos.y * square_size + j});
+				}
+			}
+
+			return cells;
+		},
+		[](const std::vector<uint8_t>& cell_vals) -> bool {
+			state_set states{};
+
+			for (auto& val : cell_vals) {
+				states.set(val);
+			}
+
+			return states.count() == BOARD_SIZE;
 		}
 	}
-	// //Squares
-	// {
-	// 	[](const Vec2& pos) -> std::vector<Vec2> {
-	// 		int square_size{(int)ceil(sqrt(BOARD_SIZE))};
-	// 		Vec2 square_pos = pos / square_size;
-	// 		std::vector<Vec2> cells{};
-	// 		for (int i{0}; i < square_size; i++) {
-	// 			for (int j{0}; j < square_size; j++) {
-	// 				cells.push_back(Vec2{square_pos.x * square_size + i, square_pos.y * square_size + j});
-	// 			}
-	// 		}
-
-	// 		return cells;
-	// 	},
-	// 	[](const std::vector<uint8_t>& cell_vals) -> bool {
-	// 		state_set states{};
-
-	// 		for (auto& val : cell_vals) {
-	// 			states.set(val);
-	// 		}
-
-	// 		return states.count() == NUM_STATES;
-	// 	}
-	// }
 };
 
 struct Cell;
@@ -464,7 +464,7 @@ int main() {
 	// collapse_cell(Vec2{8, 7}, 7);
 
 	collapse_cell(Vec2{0, 0}, 1);
-	collapse_cell(Vec2{1, 1}, 2);
+	collapse_cell(Vec2{0, 1}, 2);
 
 	std::cout << board << "\n";
 
