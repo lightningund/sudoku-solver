@@ -10,13 +10,6 @@
 #include <future>
 #include <thread>
 
-// 3x3 @9: 0.000858
-// 4x4 @9: 0.017
-// 5x5 @9: 0.273
-// 6x6 @9: 4.31
-// 7x7 @9: 56.13 -> 7 -> 3.4 -> 0.159
-// 8x8 @9: ??? -> 86 -> 41 -> 1.42
-// 9x9 @9: ??? -> 1102 -> ??? -> 20.628
 constexpr uint8_t BOARD_SIZE{9};
 constexpr uint8_t NUM_STATES{9};
 
@@ -36,7 +29,6 @@ struct Rule {
 
 using state_set = std::bitset<NUM_STATES>;
 
-constexpr size_t NUM_RULES{3};
 const Rule rules[] = {
 	// Column
 	{
@@ -61,7 +53,7 @@ const Rule rules[] = {
 	// Row
 	{
 		[](const Vec2& pos) -> std::vector<Vec2> {
-			std::vector<Vec2> cells{BOARD_SIZE};
+			std::vector<Vec2> cells{};
 			for (int i{0}; i < BOARD_SIZE; i++) {
 				if(i != pos.x) cells.push_back(Vec2{i, pos.y});
 			}
@@ -86,7 +78,9 @@ const Rule rules[] = {
 			std::vector<Vec2> cells{};
 			for (int i{0}; i < square_size; i++) {
 				for (int j{0}; j < square_size; j++) {
-					if (i != pos.x || j != pos.y) cells.push_back(Vec2{square_pos.x * square_size + i, square_pos.y * square_size + j});
+					int x = square_pos.x * square_size + i;
+					int y = square_pos.y * square_size + j;
+					if (x != pos.x || y != pos.y) cells.push_back(Vec2{x, y});
 				}
 			}
 
@@ -113,7 +107,6 @@ struct Cell {
 	state_set states{};
 
 	bool is_collapsed{false};
-	std::bitset<NUM_RULES> rules_checked{};
 
 	Cell() {
 		states.set();
@@ -306,25 +299,15 @@ void update_board(Board& board) {
 	const int max_threads{(int)std::thread::hardware_concurrency() / 2};
 	// const int max_threads{1};
 
-	// Reset the board (basically)
-	for (auto& row : board) {
-		for (auto& cell : row) {
-			cell.rules_checked.reset();
-		}
-	}
-
 	for (int i{0}; i < BOARD_SIZE; i++) {
 		for (int j{0}; j < BOARD_SIZE; j++) {
 			Vec2 pos{i, j};
 			if (!board[pos].is_collapsed) {
-				for (int r{0}; r < NUM_RULES; r++) {
-					auto& rule{rules[r]};
-
+				for (auto& rule : rules) {
 					// Copy of the original states
 					std::vector<Cell> cell_group_states{};
 
 					for (auto& cell_pos : rule.get_cells(pos)) {
-						board[cell_pos].rules_checked.set(r);
 						cell_group_states.push_back(board[cell_pos]);
 					}
 
@@ -340,26 +323,49 @@ void update_board(Board& board) {
 							auto collapse_vals = iter_set(cell_group_states, i);
 							collapse_vals.push_back(val);
 							if(rule.is_valid(collapse_vals)) {
+								//std::cout << val << " is valid in: " << collapse_vals << "\n";
 								return true;
 							}
 						}
 						return false;
 					};
 
+					state_set new_states{};
+					new_states.set();
+
 					std::vector<std::future<bool>> futures{(size_t)NUM_STATES};
-					for (int k{0}; k < futures.size(); k++) {
-						futures[k] = std::async(thread_func, k);
+					for (int k{0}; k < NUM_STATES; k++) {
+						if (board[pos].states[k]) {
+							futures[k] = std::async(thread_func, k);
+						}
 					}
 
-					state_set new_states{};
 					for (int k{0}; k < futures.size(); k++) {
-						new_states[k] = futures[k].get();
+						if (board[pos].states[k]) {
+							new_states[k] = futures[k].get();
+						}
 					}
+
+					// for (int k{0}; k < NUM_STATES; k++) {
+					// 	new_states[k] = thread_func(k);
+					// }
 
 					board[pos].states &= new_states;
 				}
 
 				std::cout << "Cell at: " << pos << " has new states: " << board[pos] << "\n";
+
+				if (board[pos].states.count() == 1) {
+					board[pos].is_collapsed = true;
+					int k{0};
+					while (true) {
+						if (board[pos].states[k]) {
+							board[pos].value = k;
+							break;
+						}
+						k++;
+					}
+				}
 			}
 		}
 	}
@@ -391,47 +397,65 @@ int main() {
 	int y_pos{};
 	uint8_t value{};
 
-	collapse_cell(Vec2{0, 0}, 4);
-	collapse_cell(Vec2{0, 3}, 9);
-	collapse_cell(Vec2{0, 7}, 5);
-	collapse_cell(Vec2{1, 2}, 5);
-	collapse_cell(Vec2{1, 3}, 6);
-	collapse_cell(Vec2{1, 5}, 7);
-	collapse_cell(Vec2{1, 6}, 2);
-	collapse_cell(Vec2{1, 8}, 4);
-	collapse_cell(Vec2{2, 5}, 4);
-	collapse_cell(Vec2{2, 6}, 7);
-	collapse_cell(Vec2{3, 0}, 8);
+	// collapse_cell(Vec2{0, 0}, 4);
+	// collapse_cell(Vec2{0, 3}, 9);
+	// collapse_cell(Vec2{0, 7}, 5);
+	// collapse_cell(Vec2{1, 2}, 5);
+	// collapse_cell(Vec2{1, 3}, 6);
+	// collapse_cell(Vec2{1, 5}, 7);
+	// collapse_cell(Vec2{1, 6}, 2);
+	// collapse_cell(Vec2{1, 8}, 4);
+	// collapse_cell(Vec2{2, 5}, 4);
+	// collapse_cell(Vec2{2, 6}, 7);
+	// collapse_cell(Vec2{3, 0}, 8);
 	// collapse_cell(Vec2{3, 1}, 7);
 	// collapse_cell(Vec2{3, 3}, 3);
 	// collapse_cell(Vec2{3, 6}, 6);
-	collapse_cell(Vec2{4, 2}, 9);
+	// collapse_cell(Vec2{4, 2}, 9);
 	// collapse_cell(Vec2{4, 3}, 7);
 	// collapse_cell(Vec2{4, 4}, 2);
 	// collapse_cell(Vec2{4, 6}, 1);
 	// collapse_cell(Vec2{4, 7}, 8);
-	collapse_cell(Vec2{5, 2}, 6);
+	// collapse_cell(Vec2{5, 2}, 6);
 	// collapse_cell(Vec2{5, 3}, 8);
 	// collapse_cell(Vec2{5, 4}, 9);
 	// collapse_cell(Vec2{5, 5}, 1);
-	collapse_cell(Vec2{6, 0}, 1);
+	// collapse_cell(Vec2{6, 0}, 1);
 	// collapse_cell(Vec2{6, 2}, 2);
 	// collapse_cell(Vec2{6, 3}, 4);
 	// collapse_cell(Vec2{6, 6}, 5);
 	// collapse_cell(Vec2{6, 7}, 6);
 	// collapse_cell(Vec2{6, 8}, 8);
-	collapse_cell(Vec2{7, 0}, 7);
+	// collapse_cell(Vec2{7, 0}, 7);
 	// collapse_cell(Vec2{7, 1}, 6);
 	// collapse_cell(Vec2{7, 3}, 5);
 	// collapse_cell(Vec2{7, 4}, 3);
 	// collapse_cell(Vec2{7, 5}, 8);
 	// collapse_cell(Vec2{7, 8}, 1);
-	collapse_cell(Vec2{8, 2}, 8);
+	// collapse_cell(Vec2{8, 2}, 8);
 	// collapse_cell(Vec2{8, 5}, 2);
 	// collapse_cell(Vec2{8, 7}, 7);
 
-	// collapse_cell(Vec2{0, 0}, 1);
-	// collapse_cell(Vec2{0, 1}, 2);
+	std::string input =
+		"010000504"
+		"096007000"
+		"000200010"
+		"000000807"
+		"085060002"
+		"004000000"
+		"030000090"
+		"009030005"
+		"000540060";
+
+	int loop = 0;
+	for (char c : input) {
+		if (c != '0') {
+			uint8_t val = c - '0';
+			std::cout << val << "\n";
+			collapse_cell(Vec2{loop % BOARD_SIZE, loop / BOARD_SIZE}, val);
+		}
+		loop++;
+	}
 
 	std::cout << board << "\n";
 
@@ -450,7 +474,7 @@ int main() {
 				std::cin >> y_pos;
 				std::cout << "Num>";
 				std::cin >> value;
-				collapse_cell(Vec2{x_pos, y_pos}, value);
+				collapse_cell(Vec2{x_pos, y_pos}, value - '0');
 		}
 	}
 
