@@ -119,7 +119,12 @@ struct Cell {
 		states.set();
 	}
 
-	uint8_t operator[](int index) {
+	/**
+	 * @brief Returns the value if collapsed, otherwise returns the nth possibility
+	 * @param n
+	 * @return
+	 */
+	uint8_t operator[](int n) {
 		if (is_collapsed) {
 			return value;
 		} else {
@@ -128,7 +133,7 @@ struct Cell {
 
 			while (i < NUM_STATES) {
 				if (states[i]) {
-					if (count == index) {
+					if (count == n) {
 						return i;
 					}
 					count++;
@@ -140,6 +145,11 @@ struct Cell {
 		}
 	}
 
+	/**
+	 * @brief Returns the value if collapsed, otherwise returns the nth possibility
+	 * @param n
+	 * @return
+	 */
 	const uint8_t operator[](int index) const {
 		if (is_collapsed) {
 			return value;
