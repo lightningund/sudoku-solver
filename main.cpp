@@ -34,11 +34,14 @@ struct Rule {
 	std::function<bool(const std::vector<uint8_t>&)> is_valid;
 };
 
-constexpr Rule rules[] = {
+using state_set = std::bitset<NUM_STATES>;
+
+constexpr size_t NUM_RULES{2};
+const Rule rules[] = {
 	// Column
 	{
-		[](const Vec2& pos) constexpr -> std::array<Vec2, BOARD_SIZE> {
-			std::array<Vec2, BOARD_SIZE> cells{};
+		[](const Vec2& pos) -> std::vector<Vec2> {
+			std::vector<Vec2> cells{BOARD_SIZE};
 			for (int i{0}; i < BOARD_SIZE; i++) {
 				cells[i] = Vec2{pos.x, i};
 			}
@@ -58,33 +61,9 @@ constexpr Rule rules[] = {
 	// Row
 	{
 		[](const Vec2& pos) -> std::vector<Vec2> {
-			std::vector<Vec2> cells{};
+			std::vector<Vec2> cells{BOARD_SIZE};
 			for (int i{0}; i < BOARD_SIZE; i++) {
-				cells.push_back(Vec2{i, pos.y});
-			}
-
-			return cells;
-		},
-		[](const std::vector<uint8_t>& cell_vals) -> bool {
-			state_set states{};
-
-			for (auto& val : cell_vals) {
-				states.set(val);
-			}
-
-			return states.count() == NUM_STATES;
-		}
-	},
-	//Squares
-	{
-		[](const Vec2& pos) -> std::vector<Vec2> {
-			int square_size{(int)ceil(sqrt(BOARD_SIZE))};
-			Vec2 square_pos = pos / square_size;
-			std::vector<Vec2> cells{};
-			for (int i{0}; i < square_size; i++) {
-				for (int j{0}; j < square_size; j++) {
-					cells.push_back(Vec2{square_pos.x * square_size + i, square_pos.y * square_size + j});
-				}
+				cells[i] = Vec2{i, pos.y};
 			}
 
 			return cells;
@@ -99,9 +78,35 @@ constexpr Rule rules[] = {
 			return states.count() == NUM_STATES;
 		}
 	}
+	// //Squares
+	// {
+	// 	[](const Vec2& pos) -> std::vector<Vec2> {
+	// 		int square_size{(int)ceil(sqrt(BOARD_SIZE))};
+	// 		Vec2 square_pos = pos / square_size;
+	// 		std::vector<Vec2> cells{};
+	// 		for (int i{0}; i < square_size; i++) {
+	// 			for (int j{0}; j < square_size; j++) {
+	// 				cells.push_back(Vec2{square_pos.x * square_size + i, square_pos.y * square_size + j});
+	// 			}
+	// 		}
+
+	// 		return cells;
+	// 	},
+	// 	[](const std::vector<uint8_t>& cell_vals) -> bool {
+	// 		state_set states{};
+
+	// 		for (auto& val : cell_vals) {
+	// 			states.set(val);
+	// 		}
+
+	// 		return states.count() == NUM_STATES;
+	// 	}
+	// }
 };
 
-using state_set = std::bitset<NUM_STATES>;
+struct Cell;
+
+std::ostream& operator<<(std::ostream& out, const Cell& cell);
 
 struct Cell {
 	uint8_t value{};
@@ -114,21 +119,28 @@ struct Cell {
 		states.set();
 	}
 
-	uint8_t operator[](int index) {
-		if (is_collapsed) {
-			return value;
-		} else {
-			int count{0};
-			int i{0};
+	// uint8_t operator[](int index) {
+	// 	if (is_collapsed) {
+	// 		return value;
+	// 	} else {
+	// 		int count{0};
+	// 		int i{0};
 
-			while (count < index && i < NUM_STATES) {
-				if (states[i]) count++;
-				i++;
-			}
+	// 		while (count < index && i < NUM_STATES) {
+	// 			if (states[i]) {
+	// 				if (count == index) {
+	// 					std::cout << (*this) << "@ index: " << index << " is: " << i << "\n";
+	// 					return i;
+	// 				}
+	// 				count++;
+	// 			}
+	// 			i++;
+	// 		}
 
-			return count;
-		}
-	}
+	// 		std::cout << "couldn't find anything\n";
+	// 		return 0;
+	// 	}
+	// }
 
 	const uint8_t operator[](int index) const {
 		if (is_collapsed) {
@@ -137,12 +149,17 @@ struct Cell {
 			int count{0};
 			int i{0};
 
-			while (count < index && i < NUM_STATES) {
-				if (states[i]) count++;
+			while (i < NUM_STATES) {
+				if (states[i]) {
+					if (count == index) {
+						return i;
+					}
+					count++;
+				}
 				i++;
 			}
 
-			return count;
+			return 0;
 		}
 	}
 
@@ -154,6 +171,23 @@ struct Cell {
 		}
 	}
 };
+
+std::ostream& operator<<(std::ostream& out, const Cell& cell) {
+	out << "{ ";
+	if (cell.is_collapsed) {
+		out << cell.value;
+	} else {
+		for (int i{0}; i < NUM_STATES; i++) {
+			if (cell.states[i]) {
+				out << i << ", ";
+			}
+		}
+	}
+	out << " }";
+
+	return out;
+}
+
 using Row = std::array<Cell, BOARD_SIZE>;
 
 class Board {
@@ -194,6 +228,11 @@ public:
 	}
 };
 
+std::ostream& operator<<(std::ostream& out, const uint8_t num) {
+	out << static_cast<unsigned int>(num);
+	return out;
+}
+
 template <typename T>
 std::ostream& operator<<(std::ostream& out, const std::vector<T>& vec) {
 	for (auto& elem : vec) {
@@ -204,20 +243,6 @@ std::ostream& operator<<(std::ostream& out, const std::vector<T>& vec) {
 
 std::ostream& operator<<(std::ostream& out, const Vec2& vec) {
 	out << "(" << vec.x << ", " << vec.y << ")";
-	return out;
-}
-
-std::ostream& operator<<(std::ostream& out, const Cell& cell) {
-	if (cell.is_collapsed) {
-		out << cell.value;
-	} else {
-		for (int i{0}; i < NUM_STATES; i++) {
-			if (cell.states[i]) {
-				out << i << ", ";
-			}
-		}
-	}
-
 	return out;
 }
 
@@ -267,13 +292,12 @@ std::vector<uint8_t> iter_set(const std::vector<Cell>& cell_states, int n) {
 		}
 	}
 
-	if (curr != 0) return std::vector<uint8_t>{};
-	else return state;
+	return state;
 }
 
-void update_board(Board& board, const std::vector<Rule>& rules) {
-	const int max_threads{(int)std::thread::hardware_concurrency() / 2};
-	// const int max_threads{1};
+void update_board(Board& board) {
+	// const int max_threads{(int)std::thread::hardware_concurrency() / 2};
+	const int max_threads{1};
 
 	// Reset the board (basically)
 	for (auto& row : board) {
@@ -306,6 +330,8 @@ void update_board(Board& board, const std::vector<Rule>& rules) {
 						cell_group_new_states.push_back(state_set{});
 					}
 
+					std::cout << cell_group_states << "\n";
+
 					int num_possibilities{1};
 					for (Cell& state : cell_group_states) {
 						num_possibilities *= state.num_states();
@@ -313,20 +339,20 @@ void update_board(Board& board, const std::vector<Rule>& rules) {
 
 					int given_each{(int)ceil(num_possibilities / max_threads)};
 
-					auto check_possibility = [&cell_group_new_states, &rule, &cell_group_states, &r](int n) -> bool {
+					auto check_possibility = [&cell_group_new_states, &cell_group_states, &rule, &r](int n) -> bool {
 						auto collapse_vals = iter_set(cell_group_states, n);
 						if (rule.is_valid(collapse_vals)) {
-							if (r == 0) std::cout << collapse_vals << " is valid\r";
+							std::cout << collapse_vals << " is valid\n";
 
-							bool all_full{true};
+							bool all_full{false};
 
 							for (int i{0}; i < cell_group_new_states.size(); i++) {
 								cell_group_new_states[i][collapse_vals[i]] = 1;
-								if (!cell_group_states[i].is_collapsed) {
-									if (cell_group_new_states[i].count() != NUM_STATES) {
-										all_full = false;
-									}
-								}
+								// if (!cell_group_states[i].is_collapsed) {
+								// 	if (cell_group_new_states[i].count() != NUM_STATES) {
+								// 		all_full = false;
+								// 	}
+								// }
 							}
 
 							return all_full;
@@ -365,7 +391,6 @@ void update_board(Board& board, const std::vector<Rule>& rules) {
 }
 
 int main() {
-
 	Board board{};
 
 	auto collapse_cell = [&](Vec2 pos, uint8_t value) {
@@ -378,7 +403,7 @@ int main() {
 		std::chrono::time_point<std::chrono::system_clock> delta{};
 		auto start{std::chrono::system_clock::now()};
 
-		update_board(board, rules);
+		update_board(board);
 		delta += std::chrono::system_clock::now() - start;
 		double real_time{(double)delta.time_since_epoch().count() / (std::chrono::system_clock::period::den)};
 
@@ -431,7 +456,7 @@ int main() {
 	// collapse_cell(Vec2{8, 7}, 7);
 
 	collapse_cell(Vec2{0, 0}, 1);
-	collapse_cell(Vec2{0, 1}, 2);
+	collapse_cell(Vec2{1, 1}, 2);
 
 	std::cout << board << "\n";
 
