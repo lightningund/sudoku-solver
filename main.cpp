@@ -119,28 +119,26 @@ struct Cell {
 		states.set();
 	}
 
-	// uint8_t operator[](int index) {
-	// 	if (is_collapsed) {
-	// 		return value;
-	// 	} else {
-	// 		int count{0};
-	// 		int i{0};
+	uint8_t operator[](int index) {
+		if (is_collapsed) {
+			return value;
+		} else {
+			int count{0};
+			int i{0};
 
-	// 		while (count < index && i < NUM_STATES) {
-	// 			if (states[i]) {
-	// 				if (count == index) {
-	// 					std::cout << (*this) << "@ index: " << index << " is: " << i << "\n";
-	// 					return i;
-	// 				}
-	// 				count++;
-	// 			}
-	// 			i++;
-	// 		}
+			while (i < NUM_STATES) {
+				if (states[i]) {
+					if (count == index) {
+						return i;
+					}
+					count++;
+				}
+				i++;
+			}
 
-	// 		std::cout << "couldn't find anything\n";
-	// 		return 0;
-	// 	}
-	// }
+			return 0;
+		}
+	}
 
 	const uint8_t operator[](int index) const {
 		if (is_collapsed) {
