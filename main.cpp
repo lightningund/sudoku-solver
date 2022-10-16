@@ -404,7 +404,7 @@ std::vector<uint8_t> increment_set(const std::vector<uint8_t>& curr, const std::
 		}
 		carry = next[digit] == bases[digit];
 		digit --;
-	} while (carry);
+	} while (carry && digit >= 0);
 
 	// std::cout << "Original: " << curr << " +1 -> " << next << "\n";
 
@@ -470,6 +470,9 @@ bool update_cell(Board& board, const Vec2& pos) {
 	std::function<bool(uint8_t)> thread_func = [&board, &thread_func, &pos](uint8_t val) -> bool {
 		for (auto& rule : rules) {
 			std::vector<Vec2> cell_group_locs{rule.get_cells(pos)};
+
+			int num_cells{(int)cell_group_locs.size()};
+
 			std::vector<Cell> cell_group_states{};
 
 			for (auto& cell_pos : cell_group_locs) {
@@ -498,28 +501,51 @@ bool update_cell(Board& board, const Vec2& pos) {
 
 			std::cout << "Bases Calculated ( " << bases << ")\n";
 
-			std::vector<uint8_t> collapse_vals(cell_group_states.size());
+			std::vector<std::vector<uint8_t>> cell_opts(num_cells);
 
-			auto not_zero = [&collapse_vals]() -> bool {
-				for (auto& val : collapse_vals) {
+			for (int i{0}; i < num_cells; i++) {
+				if (cell_group_states[i].is_collapsed) {
+					cell_opts[i].push_back(cell_group_states[i].value);
+				} else {
+					for (int j{0}; j < NUM_STATES; j++) {
+						if (cell_group_states[i].states[j]) {
+							cell_opts[i].push_back(j);
+						}
+					}
+				}
+			}
+
+			std::vector<uint8_t> collapse_inds(num_cells);
+
+			auto not_zero = [&collapse_inds]() -> bool {
+				for (auto& val : collapse_inds) {
 					if (val != 0) return true;
 				}
 
 				return false;
 			};
 
+			std::vector<uint8_t> collapse_vals(num_cells + 1);
+			collapse_vals[num_cells] = val;
 			bool is_valid_for_rule{false};
+
 			do {
-				// std::cout << "Option Checking\n";
+				for (int i{num_cells - 1}; i >= 0; i--) {
+					// if (cell_opts[i][collapse_inds[i]] == collapse_vals[i]) break;
+
+					collapse_vals[i] = cell_opts[i][collapse_inds[i]];
+				}
+				std::cout << collapse_vals << "Cell is: " << val << "\r";
 				if(rule.is_valid(collapse_vals)) {
 					is_valid_for_rule = true;
 					break;
 				}
 				// std::cout << "Validity Checked\n";
-				collapse_vals = increment_set(collapse_vals, bases);
+				collapse_inds = increment_set(collapse_inds, bases);
 			} while (not_zero());
 
-			std::cout << "Rule Checked\n";
+			std::cout << "\nRule Checked\n";
+			std::cout << "Rule valid? " << is_valid_for_rule << "\n";
 
 			if (!is_valid_for_rule) {
 				return false;
