@@ -11,6 +11,8 @@
 #include <thread>
 #include <span>
 
+#define __D_SINGLE_THREAD
+
 constexpr uint8_t BOARD_SIZE{9};
 constexpr uint8_t NUM_STATES{9};
 
@@ -527,26 +529,27 @@ bool update_cell(Board& board, const Vec2& pos) {
 		return true;
 	};
 
-	// std::vector<std::future<bool>> futures{(size_t)NUM_STATES};
-	// for (int k{0}; k < NUM_STATES; k++) {
-	// 	if (board[pos].states[k]) {
-	// 		futures[k] = std::async(thread_func, k);
-	// 	}
-	// }
-
-	// state_set new_states{};
-	// for (int k{0}; k < futures.size(); k++) {
-	// 	if (board[pos].states[k]) {
-	// 		new_states[k] = futures[k].get();
-	// 	}
-	// }std::vector<std::future<bool>> futures{(size_t)NUM_STATES};
-
 	state_set new_states{};
+#ifndef __D_SINGLE_THREAD
+	std::vector<std::future<bool>> futures{(size_t)NUM_STATES};
+	for (int k{0}; k < NUM_STATES; k++) {
+		if (board[pos].states[k]) {
+			futures[k] = std::async(thread_func, k);
+		}
+	}
+
+	for (int k{0}; k < NUM_STATES; k++) {
+		if (board[pos].states[k]) {
+			new_states[k] = futures[k].get();
+		}
+	}
+#else
 	for (int k{0}; k < NUM_STATES; k++) {
 		if (board[pos].states[k]) {
 			new_states[k] = thread_func(k);
 		}
 	}
+#endif
 
 	bool changed{board[pos].states != new_states};
 	board[pos].states = new_states;
