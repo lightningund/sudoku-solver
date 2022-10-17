@@ -10,8 +10,9 @@
 #include <future>
 #include <thread>
 #include <span>
+#include <algorithm>
 
-#define __D_SINGLE_THREAD
+// #define __D_SINGLE_THREAD
 
 constexpr uint8_t BOARD_SIZE{9};
 constexpr uint8_t NUM_STATES{9};
@@ -472,58 +473,49 @@ bool update_cell(Board& board, const Vec2& pos) {
 	if (board[pos].is_collapsed) return false;
 
 	std::function<bool(uint8_t)> thread_func = [&board, &pos](uint8_t val) -> bool {
-		bool possible{true};
+		for (auto& rule : rules) {
+			std::vector<Vec2> cell_locs{rule.get_cells(pos)};
 
-		for (int r{0}; r < rules.size() && possible; r++) {
-			auto& rule{rules[r]};
-			// std::cout << "Testing new rule:\n";
-			std::vector<Vec2> cell_group_locs{rule.get_cells(pos)};
+			int num_cells{(int)cell_locs.size()};
 
-			int num_cells{(int)cell_group_locs.size()};
-
-			std::vector<Cell> cell_group_states{};
-
-			for (auto& cell_pos : cell_group_locs) {
-				cell_group_states.push_back(board[cell_pos]);
-			}
-
-			// int num_possibilities{1};
-			// for (Cell& state : cell_group_states) {
-			// 	num_possibilities *= state.num_states();
-			// }
-
-			// bool is_valid_for_rule{false};
-			// for (int i{0}; i < num_possibilities; i++) {
-			// 	auto collapse_vals = iter_set(cell_group_states, i);
-			// 	collapse_vals.push_back(val);
-			// 	if(rule.is_valid(collapse_vals)) {
-			// 		is_valid_for_rule = true;
-			// 		break;
-			// 	}
-			// }
-
-			std::vector<uint8_t> bases{};
-			for (Cell& state : cell_group_states) {
-				bases.push_back(state.num_states());
-			}
-
-			// std::cout << "Bases Calculated (" << bases << ")\n";
+			std::vector<Cell> cell_states(num_cells);
+			std::transform(
+				cell_locs.begin(),
+				cell_locs.end(),
+				cell_states.begin(),
+				[&board](Vec2& cell_pos) {return board[cell_pos];}
+			);
 
 			std::vector<std::vector<uint8_t>> cell_opts(num_cells);
-
-			for (int i{0}; i < num_cells; i++) {
-				if (cell_group_states[i].is_collapsed) {
-					cell_opts[i].push_back(cell_group_states[i].value);
-				} else {
-					for (int j{0}; j < NUM_STATES; j++) {
-						if (cell_group_states[i].states[j]) {
-							cell_opts[i].push_back(j);
+			std::transform(
+				cell_states.begin(),
+				cell_states.end(),
+				cell_opts.begin(),
+				[](Cell& cell) {
+					std::vector<uint8_t> opts{};
+					if (cell.is_collapsed) {
+						opts.push_back(cell.value);
+					} else {
+						for (int j{0}; j < NUM_STATES; j++) {
+							if (cell.states[j]) {
+								opts.push_back(j);
+							}
 						}
 					}
+					return opts;
 				}
-			}
+			);
+
+			std::vector<uint8_t> bases(num_cells);
+			std::transform(
+				cell_opts.begin(),
+				cell_opts.end(),
+				bases.begin(),
+				[](std::vector<uint8_t>& opts) {return opts.size();}
+			);
 
 			std::vector<uint8_t> collapse_inds(num_cells);
+			std::vector<uint8_t> collapse_vals(num_cells + 1);
 
 			auto not_zero = [&collapse_inds]() -> bool {
 				for (auto& val : collapse_inds) {
@@ -533,7 +525,6 @@ bool update_cell(Board& board, const Vec2& pos) {
 				return false;
 			};
 
-			std::vector<uint8_t> collapse_vals(num_cells + 1);
 			collapse_vals[num_cells] = val;
 			bool is_valid_for_rule{false};
 
@@ -541,25 +532,20 @@ bool update_cell(Board& board, const Vec2& pos) {
 				for (int i{0}; i < num_cells; i++) {
 					collapse_vals[i] = cell_opts[i][collapse_inds[i]];
 				}
-				// std::cout << collapse_vals << " from " << collapse_inds << "\r";
+
 				if(rule.is_valid(collapse_vals)) {
-					// std::cout << "\nFOUND ONE\n";
 					is_valid_for_rule = true;
 					break;
 				}
-				// std::cout << "Validity Checked\n";
 				collapse_inds = increment_set(collapse_inds, bases);
 			} while (not_zero());
 
-			// std::cout << "\nRule Checked\n";
-			// std::cout << "Rule valid? " << is_valid_for_rule << "\n";
-
 			if (!is_valid_for_rule) {
-				possible = false;
+				return false;
 			}
 		}
 
-		return possible;
+		return true;
 	};
 
 	state_set new_states{};
