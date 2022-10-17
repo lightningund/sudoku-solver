@@ -73,17 +73,6 @@ struct Rule {
 
 using state_set = std::bitset<NUM_STATES>;
 
-// Checks for no duplicate cells. Used a lot so I just put it here
-bool default_rule(const std::span<uint8_t>& cell_vals) {
-	state_set states{};
-
-	for (auto& val : cell_vals) {
-		states.set(val);
-	}
-
-	return states.count() == cell_vals.size();
-};
-
 struct Cell {
 	uint8_t value{};
 	state_set states{};
@@ -284,6 +273,17 @@ std::ostream& operator<<(std::ostream& out, const Board& board) {
 
 	return out;
 }
+
+// Checks for no duplicate cells. Used a lot so I just put it here
+bool default_rule(const std::span<uint8_t>& cell_vals) {
+	state_set states{};
+
+	for (auto& val : cell_vals) {
+		states.set(val);
+	}
+
+	return states.count() == cell_vals.size();
+};
 
 const std::vector<Rule> rules = {
 	{ // Columns
