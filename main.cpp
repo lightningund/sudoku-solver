@@ -284,7 +284,7 @@ std::ostream& operator<<(std::ostream& out, const Board& board) {
 	return out;
 }
 
-const Rule rules[] = {
+const std::vector<Rule> rules = {
 	{ // Columns
 		[](const Vec2& pos) -> std::vector<Vec2> {
 			std::vector<Vec2> cells{};
@@ -395,7 +395,7 @@ const Rule rules[] = {
 std::vector<uint8_t> increment_set(const std::vector<uint8_t>& curr, const std::vector<uint8_t>& bases) {
 	std::vector<uint8_t> next{curr};
 
-	size_t digit{curr.size() - 1};
+	int digit{(int)curr.size() - 1};
 	bool carry{false};
 	do {
 		next[digit]++;
@@ -405,6 +405,10 @@ std::vector<uint8_t> increment_set(const std::vector<uint8_t>& curr, const std::
 		carry = next[digit] == bases[digit];
 		digit --;
 	} while (carry && digit >= 0);
+
+	if (carry) {
+		next[0] = 0;
+	}
 
 	// std::cout << "Original: " << curr << " +1 -> " << next << "\n";
 
@@ -467,8 +471,12 @@ void check_cell_collapse(Board& board, const Vec2& pos) {
 bool update_cell(Board& board, const Vec2& pos) {
 	if (board[pos].is_collapsed) return false;
 
-	std::function<bool(uint8_t)> thread_func = [&board, &thread_func, &pos](uint8_t val) -> bool {
-		for (auto& rule : rules) {
+	std::function<bool(uint8_t)> thread_func = [&board, &pos](uint8_t val) -> bool {
+		bool possible{true};
+
+		for (int r{0}; r < rules.size() && possible; r++) {
+			auto& rule{rules[r]};
+			// std::cout << "Testing new rule:\n";
 			std::vector<Vec2> cell_group_locs{rule.get_cells(pos)};
 
 			int num_cells{(int)cell_group_locs.size()};
@@ -499,7 +507,7 @@ bool update_cell(Board& board, const Vec2& pos) {
 				bases.push_back(state.num_states());
 			}
 
-			std::cout << "Bases Calculated ( " << bases << ")\n";
+			// std::cout << "Bases Calculated (" << bases << ")\n";
 
 			std::vector<std::vector<uint8_t>> cell_opts(num_cells);
 
@@ -530,13 +538,12 @@ bool update_cell(Board& board, const Vec2& pos) {
 			bool is_valid_for_rule{false};
 
 			do {
-				for (int i{num_cells - 1}; i >= 0; i--) {
-					// if (cell_opts[i][collapse_inds[i]] == collapse_vals[i]) break;
-
+				for (int i{0}; i < num_cells; i++) {
 					collapse_vals[i] = cell_opts[i][collapse_inds[i]];
 				}
-				std::cout << collapse_vals << "Cell is: " << val << "\r";
+				// std::cout << collapse_vals << " from " << collapse_inds << "\r";
 				if(rule.is_valid(collapse_vals)) {
+					// std::cout << "\nFOUND ONE\n";
 					is_valid_for_rule = true;
 					break;
 				}
@@ -544,15 +551,15 @@ bool update_cell(Board& board, const Vec2& pos) {
 				collapse_inds = increment_set(collapse_inds, bases);
 			} while (not_zero());
 
-			std::cout << "\nRule Checked\n";
-			std::cout << "Rule valid? " << is_valid_for_rule << "\n";
+			// std::cout << "\nRule Checked\n";
+			// std::cout << "Rule valid? " << is_valid_for_rule << "\n";
 
 			if (!is_valid_for_rule) {
-				return false;
+				possible = false;
 			}
 		}
 
-		return true;
+		return possible;
 	};
 
 	state_set new_states{};
@@ -573,9 +580,11 @@ bool update_cell(Board& board, const Vec2& pos) {
 	for (int k{0}; k < NUM_STATES; k++) {
 		if (board[pos].states[k]) {
 			new_states[k] = thread_func(k);
+			// std::cout << "Thread func done once\n";
 		}
 	}
 #endif
+	// std::cout << "Thread func all done\n";
 
 	bool changed{board[pos].states != new_states};
 	board[pos].states = new_states;
@@ -714,13 +723,6 @@ int main() {
 	// 	"000000000"
 	// 	"000000000"
 	// 	"102000000";
-
-	// std::string input =
-	// 	"10000"
-	// 	"02000"
-	// 	"00300"
-	// 	"00040"
-	// 	"00000";
 
 	int loop = 0;
 	for (char c : input) {
