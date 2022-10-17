@@ -380,7 +380,7 @@ const std::vector<Rule> rules = {
 
 	// 		return cells;
 	// 	},
-	// 	[](const std::vector<uint8_t>& cell_vals) -> bool {
+	// 	[](const std::span<uint8_t>& cell_vals) -> bool {
 	// 		if (cell_vals.size() == 1) return true;
 
 	// 		uint8_t mid_cell = cell_vals[cell_vals.size() - 1];
@@ -479,40 +479,24 @@ bool update_cell(Board& board, const Vec2& pos) {
 			int num_cells{(int)cell_locs.size()};
 
 			std::vector<Cell> cell_states(num_cells);
-			std::transform(
-				cell_locs.begin(),
-				cell_locs.end(),
-				cell_states.begin(),
-				[&board](Vec2& cell_pos) {return board[cell_pos];}
-			);
-
 			std::vector<std::vector<uint8_t>> cell_opts(num_cells);
-			std::transform(
-				cell_states.begin(),
-				cell_states.end(),
-				cell_opts.begin(),
-				[](Cell& cell) {
-					std::vector<uint8_t> opts{};
-					if (cell.is_collapsed) {
-						opts.push_back(cell.value);
-					} else {
-						for (int j{0}; j < NUM_STATES; j++) {
-							if (cell.states[j]) {
-								opts.push_back(j);
-							}
+			std::vector<uint8_t> bases(num_cells);
+
+			for (int i{0}; i < num_cells; i++) {
+				cell_states[i] = board[cell_locs[i]];
+
+				if (cell_states[i].is_collapsed) {
+					cell_opts[i].push_back(cell_states[i].value);
+				} else {
+					for (int j{0}; j < NUM_STATES; j++) {
+						if (cell_states[i].states[j]) {
+							cell_opts[i].push_back(j);
 						}
 					}
-					return opts;
 				}
-			);
 
-			std::vector<uint8_t> bases(num_cells);
-			std::transform(
-				cell_opts.begin(),
-				cell_opts.end(),
-				bases.begin(),
-				[](std::vector<uint8_t>& opts) {return opts.size();}
-			);
+				bases[i] = cell_opts[i].size();
+			}
 
 			std::vector<uint8_t> collapse_inds(num_cells);
 			std::vector<uint8_t> collapse_vals(num_cells + 1);
@@ -566,11 +550,9 @@ bool update_cell(Board& board, const Vec2& pos) {
 	for (int k{0}; k < NUM_STATES; k++) {
 		if (board[pos].states[k]) {
 			new_states[k] = thread_func(k);
-			// std::cout << "Thread func done once\n";
 		}
 	}
 #endif
-	// std::cout << "Thread func all done\n";
 
 	bool changed{board[pos].states != new_states};
 	board[pos].states = new_states;
@@ -596,17 +578,16 @@ bool update_board(Board& board) {
 	return changed;
 }
 
-bool check_board_state(std::vector<std::vector<uint8_t>> state) {
+bool check_board_state(std::vector<uint8_t> state) {
 	for (int i{0}; i < state.size(); i++) {
-		for (int j{0}; j < state[i].size(); j++) {
-			for (auto& rule : rules) {
-				auto cells = rule.get_cells(Vec2{i, j});
-				std::vector<uint8_t> cell_states{};
-				for (auto& cell : cells) {
-					cell_states.push_back(state[cell.x][cell.y]);
-				}
-				if (!rule.is_valid(cell_states)) return false;
+		Vec2 pos{i / BOARD_SIZE, i % BOARD_SIZE};
+		for (auto& rule : rules) {
+			auto cells = rule.get_cells(pos);
+			std::vector<uint8_t> cell_states{};
+			for (auto& cell : cells) {
+				cell_states.push_back(state[cell.x * BOARD_SIZE + cell.y]);
 			}
+			if (!rule.is_valid(cell_states)) return false;
 		}
 	}
 
@@ -617,24 +598,57 @@ void brute_update(Board& board) {
 	Board new_board{board};
 	new_board.reset();
 
-	unsigned long long num_possibilities{1};
-	for (auto& row : board) {
-		num_possibilities *= row_states(row);
-	}
+	int num_cells = BOARD_SIZE * BOARD_SIZE;
 
-	std::cout << num_possibilities << "\n";
+	std::vector<std::vector<uint8_t>> opts{};
+	std::vector<uint8_t> bases{};
 
-	for (unsigned long long n{0}; n < num_possibilities; n++) {
-		std::cout << n << "\r";
-		auto states = iter_set(board, n);
-		if (check_board_state(states)) {
-			for (int i{0}; i < BOARD_SIZE; i++) {
-				for (int j{0}; j < BOARD_SIZE; j++) {
-					if (!new_board[i][j].is_collapsed) new_board[i][j].states[states[i][j]] = true;
+	for (int i{0}; i < num_cells; i++) {
+		Vec2 index{i / BOARD_SIZE, i % BOARD_SIZE};
+		Cell cell{board[index]};
+
+		std::vector<uint8_t> cell_opts{};
+		if (cell.is_collapsed) {
+			cell_opts.push_back(cell.value);
+		} else {
+			for (int j{0}; j < NUM_STATES; j++) {
+				if (cell.states[j]) {
+					cell_opts.push_back(j);
 				}
 			}
 		}
+
+		opts.push_back(cell_opts);
+		bases.push_back(cell_opts.size());
 	}
+
+	std::vector<uint8_t> collapse_inds(num_cells);
+	std::vector<uint8_t> collapse_vals(num_cells);
+
+	auto not_zero = [&collapse_inds]() -> bool {
+		for (auto& val : collapse_inds) {
+			if (val != 0) return true;
+		}
+
+		return false;
+	};
+
+	do {
+		for (int i{0}; i < num_cells; i++) {
+			collapse_vals[i] = opts[i][collapse_inds[i]];
+		}
+
+		std::cout << collapse_vals << "\r";
+		if (check_board_state(collapse_vals)) {
+			std::cout << "\n";
+			for (int i{0}; i < BOARD_SIZE; i++) {
+				for (int j{0}; j < BOARD_SIZE; j++) {
+					if (!new_board[i][j].is_collapsed) new_board[i][j].states[collapse_vals[i * BOARD_SIZE + j]] = true;
+				}
+			}
+		}
+		collapse_inds = increment_set(collapse_inds, bases);
+	} while (not_zero());
 
 	board = new_board;
 }
@@ -709,6 +723,13 @@ int main() {
 	// 	"000000000"
 	// 	"000000000"
 	// 	"102000000";
+
+	// std::string input =
+	// 	"10000"
+	// 	"02000"
+	// 	"00300"
+	// 	"00040"
+	// 	"00000";
 
 	int loop = 0;
 	for (char c : input) {
